@@ -1,0 +1,52 @@
+{
+  "id": "011",
+  "name": "Disable Game DVR",
+  "description": "Disables Xbox Game Bar game recording features",
+  "category": "gaming",
+  "impact": "low",
+  "actions": {
+    "apply": [
+      {
+        "type": "registry",
+        "path": "HKEY_CURRENT_USER\\System\\GameConfigStore",
+        "key": "GameDVR_Enabled",
+        "value": 0,
+        "value_type": "DWORD"
+      },
+      {
+        "type": "registry",
+        "path": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\GameDVR",
+        "key": "AppCaptureEnabled",
+        "value": 0,
+        "value_type": "DWORD"
+      },
+      {
+        "type": "registry",
+        "path": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Microsoft\\Windows\\GameDVR",
+        "key": "AllowGameDVR",
+        "value": 0,
+        "value_type": "DWORD"
+      }
+    ],
+    "verify": [
+      {
+        "type": "registry",
+        "path": "HKEY_CURRENT_USER\\System\\GameConfigStore",
+        "key": "GameDVR_Enabled",
+        "expected": 0
+      },
+      {
+        "type": "registry",
+        "path": "HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\GameDVR",
+        "key": "AppCaptureEnabled",
+        "expected": 0
+      },
+      {
+        "type": "registry",
+        "path": "HKEY_LOCAL_MACHINE\\SOFTWARE\\Policies\\Microsoft\\Windows\\GameDVR",
+        "key": "AllowGameDVR",
+        "expected": 0
+      }
+    ]
+  }
+}
