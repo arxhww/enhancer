@@ -4,12 +4,24 @@ import os
 from pathlib import Path
 
 CORE_FILES = [
+    "core/__init__.py",
     "core/registry.py",
     "core/rollback.py",
     "core/tweak_manager.py",
-    "core/__init__.py",
-    "utils/admin.py",
+    
+    "core/recovery.py",
+    "core/tweak_id.py",
+    
+    "core/actions/__init__.py",
+    "core/actions/base.py",
+    "core/actions/factory.py",
+    "core/actions/registry_action.py",
+    "core/actions/verify_action.py",
+    
     "utils/__init__.py",
+    "utils/admin.py",
+    "utils/manifest.py",
+    
     "main.py"
 ]
 
@@ -26,7 +38,7 @@ def calculate_hash(filepath):
 
 def generate_manifest():
     manifest = {
-        "version": "1.0.0",
+        "version": "1.1.1",
         "engine_name": "EnhancerCore",
         "files": {}
     }
@@ -40,7 +52,7 @@ def generate_manifest():
             manifest["files"][file_rel] = h
             print(f"[HASH] {file_rel}: {h[:16]}...")
         else:
-            print(f"[WARN] Verify path: {file_rel}")
+            print(f"[WARN] Missing file: {file_rel}")
             
     return manifest
 

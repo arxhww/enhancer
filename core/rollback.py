@@ -7,6 +7,7 @@ DB_PATH = Path(__file__).parent.parent / "enhancer.db"
 
 def init_db():
     conn = sqlite3.connect(DB_PATH)
+    conn.execute("PRAGMA journal_mode=WAL")
     cursor = conn.cursor()
     
     cursor.execute("""
@@ -34,11 +35,22 @@ def init_db():
         )
     """)
     
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS snapshots_v2 (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            history_id INTEGER NOT NULL,
+            action_type TEXT NOT NULL,
+            metadata_json TEXT NOT NULL,
+            FOREIGN KEY (history_id) REFERENCES tweak_history(id)
+        )
+    """)
+    
     conn.commit()
     conn.close()
 
-def create_history_entry(tweak_id):
-    conn = sqlite3.connect(DB_PATH)
+
+def create_history_entry(tweak_id: str) -> int:
+    conn = sqlite3.connect(DB_PATH, timeout=10.0)
     cursor = conn.cursor()
     
     cursor.execute("""
@@ -52,8 +64,9 @@ def create_history_entry(tweak_id):
     
     return history_id
 
+
 def save_snapshot(history_id, registry_path, key_name, old_value, old_type, value_existed, subkey_existed):
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=10.0)
     cursor = conn.cursor()
     value_str = json.dumps(old_value) if old_value is not None else None
     
@@ -65,8 +78,22 @@ def save_snapshot(history_id, registry_path, key_name, old_value, old_type, valu
     conn.commit()
     conn.close()
 
-def mark_success(history_id):
-    conn = sqlite3.connect(DB_PATH)
+
+def save_snapshot_v2(history_id: int, snapshot):
+    conn = sqlite3.connect(DB_PATH, timeout=10.0)
+    cursor = conn.cursor()
+    
+    cursor.execute("""
+        INSERT INTO snapshots_v2 (history_id, action_type, metadata_json)
+        VALUES (?, ?, ?)
+    """, (history_id, snapshot.action_type, json.dumps(snapshot.metadata)))
+    
+    conn.commit()
+    conn.close()
+
+
+def mark_success(history_id: int):
+    conn = sqlite3.connect(DB_PATH, timeout=10.0)
     cursor = conn.cursor()
     
     cursor.execute("""
@@ -78,8 +105,9 @@ def mark_success(history_id):
     conn.commit()
     conn.close()
 
-def mark_rolled_back(history_id, error_message=None):
-    conn = sqlite3.connect(DB_PATH)
+
+def mark_rolled_back(history_id: int, error_message=None):
+    conn = sqlite3.connect(DB_PATH, timeout=10.0)
     cursor = conn.cursor()
     
     if error_message:
@@ -98,8 +126,9 @@ def mark_rolled_back(history_id, error_message=None):
     conn.commit()
     conn.close()
 
-def mark_reverted(history_id):
-    conn = sqlite3.connect(DB_PATH)
+
+def mark_reverted(history_id: int):
+    conn = sqlite3.connect(DB_PATH, timeout=10.0)
     cursor = conn.cursor()
     
     cursor.execute("""
@@ -111,8 +140,9 @@ def mark_reverted(history_id):
     conn.commit()
     conn.close()
 
-def get_snapshots(history_id):
-    conn = sqlite3.connect(DB_PATH)
+
+def get_snapshots(history_id: int) -> list:
+    conn = sqlite3.connect(DB_PATH, timeout=10.0)
     cursor = conn.cursor()
     cursor.execute("""
         SELECT registry_path, key_name, old_value, old_type, value_existed, subkey_existed
@@ -137,8 +167,33 @@ def get_snapshots(history_id):
     conn.close()
     return snapshots
 
-def get_active_tweaks():
-    conn = sqlite3.connect(DB_PATH)
+
+def get_snapshots_v2(history_id: int) -> list:
+    conn = sqlite3.connect(DB_PATH, timeout=10.0)
+    cursor = conn.cursor()
+    
+    cursor.execute("""
+        SELECT action_type, metadata_json
+        FROM snapshots_v2
+        WHERE history_id = ?
+        ORDER BY id ASC
+    """, (history_id,))
+    
+    snapshots = []
+    for row in cursor.fetchall():
+        action_type, metadata_json = row
+        metadata = json.loads(metadata_json)
+        snapshots.append({
+            "action_type": action_type,
+            "metadata": metadata
+        })
+    
+    conn.close()
+    return snapshots
+
+
+def get_active_tweaks() -> list:
+    conn = sqlite3.connect(DB_PATH, timeout=10.0)
     cursor = conn.cursor()
     
     cursor.execute("""
@@ -159,8 +214,9 @@ def get_active_tweaks():
     conn.close()
     return tweaks
 
-def mark_noop(history_id):
-    conn = sqlite3.connect(DB_PATH)
+
+def mark_noop(history_id: int):
+    conn = sqlite3.connect(DB_PATH, timeout=10.0)
     cursor = conn.cursor()
     
     cursor.execute("""
@@ -171,5 +227,6 @@ def mark_noop(history_id):
     
     conn.commit()
     conn.close()
+
 
 init_db()
