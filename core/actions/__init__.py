@@ -8,6 +8,10 @@ from .factory import (
 from .registry_action import RegistryAction
 from .verify_action import RegistryVerifyAction, create_verify_action
 
+from .service_action import ServiceAction
+from .powercfg_action import PowerCfgAction
+from .bcdedit_action import BcdEditAction
+
 __all__ = [
     'Action',
     'ActionSnapshot',
@@ -18,4 +22,7 @@ __all__ = [
     'ACTION_REGISTRY',
     'RegistryAction',
     'RegistryVerifyAction',
+    'ServiceAction',
+    'PowerCfgAction',
+    'BcdEditAction',
 ]

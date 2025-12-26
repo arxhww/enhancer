@@ -1,14 +1,18 @@
 from typing import Dict, Any, Type
 from .base import Action, ActionSnapshot
 from .registry_action import RegistryAction
+from .service_action import ServiceAction
+from .powercfg_action import PowerCfgAction
+from .bcdedit_action import BcdEditAction
 
 
 # Registry of all available action types
 ACTION_REGISTRY: Dict[str, Type[Action]] = {
     "registry": RegistryAction,
-    # Future imp "service": ServiceAction,
-    # Future imp "powercfg": PowerConfigAction,
-    # Future imp "bcdedit": BootConfigAction,
+    "service": ServiceAction,
+    "powercfg": PowerCfgAction,
+    "bcdedit": BcdEditAction,
+    # Future...
 }
 
 
