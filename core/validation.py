@@ -1,6 +1,7 @@
 import re
 from typing import Any, Dict, List, Set, Tuple
 from .tweak_id import TweakID
+from .constants import SCHEMA_VERSION
 
 class ValidationError(Exception):
     """Raised when a tweak violates schema or composition rules."""
@@ -32,6 +33,13 @@ class TweakValidator:
         self._validate_rollback_logic(definition)
         self._validate_verify_semantics(definition)
         self._validate_action_integrity(definition)
+        
+        declared_version = definition.get("schema_version", 1)
+        if declared_version != SCHEMA_VERSION:
+            raise ValidationError(
+                f"Schema version mismatch. Tweak declares v{declared_version}, "
+                f"Engine requires v{SCHEMA_VERSION}."
+            )
 
     def validate_composition(
         self, 
