@@ -1,9 +1,11 @@
 import sqlite3
-from datetime import datetime
 from pathlib import Path
+
 from .tweak_state import TweakState, can_transition, TRANSITIONS
+from .time import DEFAULT_TIME_PROVIDER as TIME
 
 DB_PATH = Path(__file__).parent.parent / "enhancer.db"
+
 
 class TweakStateMachine:
 
@@ -24,30 +26,28 @@ class TweakStateMachine:
 
         next_state = TRANSITIONS[self.current_state][action]
         self._persist_state(next_state, context)
-        
+
         self.current_state = next_state
         return next_state
 
     def _persist_state(self, new_state: TweakState, context: dict = None):
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
-        
-        status_str = new_state.value
-        
+
         cursor.execute("""
             UPDATE tweak_history
             SET status = ?
             WHERE id = ?
-        """, (status_str, self.history_id))
-        
+        """, (new_state.value, self.history_id))
+
         if new_state == TweakState.VERIFIED:
-            ts = (context or {}).get("verified_at", datetime.now())
+            ts = (context or {}).get("verified_at", TIME.now())
             cursor.execute("""
                 UPDATE tweak_history
                 SET verified_at = ?
                 WHERE id = ?
             """, (ts, self.history_id))
-        
+
         if context and "error_message" in context:
             cursor.execute("""
                 UPDATE tweak_history

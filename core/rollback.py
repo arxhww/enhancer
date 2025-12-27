@@ -1,26 +1,35 @@
 import sqlite3
 import json
-from datetime import datetime
 from pathlib import Path
+from datetime import datetime
+
+from .time import DEFAULT_TIME_PROVIDER as TIME
 
 DB_PATH = Path(__file__).parent.parent / "enhancer.db"
 
+
 def init_db():
-    conn = sqlite3.connect(DB_PATH)
+    sqlite3.register_adapter(datetime, lambda dt: dt.isoformat())
+    sqlite3.register_converter(
+        "TIMESTAMP", lambda s: datetime.fromisoformat(s.decode())
+    )
+
+    conn = sqlite3.connect(DB_PATH, detect_types=sqlite3.PARSE_DECLTYPES)
     conn.execute("PRAGMA journal_mode=WAL")
     cursor = conn.cursor()
-    
+
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS tweak_history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             tweak_id TEXT NOT NULL,
             applied_at TIMESTAMP NOT NULL,
             reverted_at TIMESTAMP,
+            verified_at TIMESTAMP,
             status TEXT NOT NULL,
             error_message TEXT
         )
     """)
-    
+
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS snapshots (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -34,7 +43,7 @@ def init_db():
             FOREIGN KEY (history_id) REFERENCES tweak_history(id)
         )
     """)
-    
+
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS snapshots_v2 (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -44,85 +53,35 @@ def init_db():
             FOREIGN KEY (history_id) REFERENCES tweak_history(id)
         )
     """)
-    
+
     conn.commit()
     conn.close()
 
 
 def create_history_entry(tweak_id: str) -> int:
-    conn = sqlite3.connect(DB_PATH, timeout=10.0)
+    conn = sqlite3.connect(DB_PATH, timeout=10.0, detect_types=sqlite3.PARSE_DECLTYPES)
     cursor = conn.cursor()
-    
+
     cursor.execute("""
         INSERT INTO tweak_history (tweak_id, applied_at, status)
         VALUES (?, ?, ?)
-    """, (tweak_id, datetime.now(), "pending"))
-    
+    """, (tweak_id, TIME.now(), "pending"))
+
     history_id = cursor.lastrowid
     conn.commit()
     conn.close()
-    
+
     return history_id
-
-
-def save_snapshot(history_id, registry_path, key_name, old_value, old_type, value_existed, subkey_existed):
-    conn = sqlite3.connect(DB_PATH, timeout=10.0)
-    cursor = conn.cursor()
-    value_str = json.dumps(old_value) if old_value is not None else None
-    
-    cursor.execute("""
-        INSERT INTO snapshots (history_id, registry_path, key_name, old_value, old_type, value_existed, subkey_existed)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
-    """, (history_id, registry_path, key_name, value_str, old_type, value_existed, subkey_existed))
-    
-    conn.commit()
-    conn.close()
-
 
 def save_snapshot_v2(history_id: int, snapshot):
     conn = sqlite3.connect(DB_PATH, timeout=10.0)
     cursor = conn.cursor()
-    
+
     cursor.execute("""
         INSERT INTO snapshots_v2 (history_id, action_type, metadata_json)
         VALUES (?, ?, ?)
     """, (history_id, snapshot.action_type, json.dumps(snapshot.metadata)))
-    
-    conn.commit()
-    conn.close()
 
-
-def mark_success(history_id: int):
-    conn = sqlite3.connect(DB_PATH, timeout=10.0)
-    cursor = conn.cursor()
-    
-    cursor.execute("""
-        UPDATE tweak_history
-        SET status = 'applied'
-        WHERE id = ?
-    """, (history_id,))
-    
-    conn.commit()
-    conn.close()
-
-
-def mark_rolled_back(history_id: int, error_message=None):
-    conn = sqlite3.connect(DB_PATH, timeout=10.0)
-    cursor = conn.cursor()
-    
-    if error_message:
-        cursor.execute("""
-            UPDATE tweak_history
-            SET status = 'rolled_back', error_message = ?
-            WHERE id = ?
-        """, (error_message, history_id))
-    else:
-        cursor.execute("""
-            UPDATE tweak_history
-            SET status = 'rolled_back'
-            WHERE id = ?
-        """, (history_id,))
-    
     conn.commit()
     conn.close()
 
@@ -130,103 +89,119 @@ def mark_rolled_back(history_id: int, error_message=None):
 def mark_reverted(history_id: int):
     conn = sqlite3.connect(DB_PATH, timeout=10.0)
     cursor = conn.cursor()
-    
+
     cursor.execute("""
         UPDATE tweak_history
-        SET status = 'reverted', reverted_at = ?
+        SET status = 'reverted',
+            reverted_at = ?
         WHERE id = ?
-    """, (datetime.now(), history_id))
-    
+    """, (TIME.now(), history_id))
+
     conn.commit()
     conn.close()
-
-
-def get_snapshots(history_id: int) -> list:
+    
+def mark_applied(history_id: int):
     conn = sqlite3.connect(DB_PATH, timeout=10.0)
     cursor = conn.cursor()
+
     cursor.execute("""
-        SELECT registry_path, key_name, old_value, old_type, value_existed, subkey_existed
-        FROM snapshots
-        WHERE history_id = ?
-        ORDER BY id ASC
+        UPDATE tweak_history
+        SET status = 'applied'
+        WHERE id = ?
     """, (history_id,))
-    
-    snapshots = []
-    for row in cursor.fetchall():
-        path, key, value_str, reg_type, value_existed, subkey_existed = row
-        value = json.loads(value_str) if value_str else None
-        snapshots.append({
-            "path": path,
-            "key": key,
-            "value": value,
-            "type": reg_type,
-            "value_existed": bool(value_existed),
-            "subkey_existed": bool(subkey_existed)
-        })
-    
+
+    conn.commit()
     conn.close()
-    return snapshots
-
-
+    
 def get_snapshots_v2(history_id: int) -> list:
     conn = sqlite3.connect(DB_PATH, timeout=10.0)
     cursor = conn.cursor()
-    
+
     cursor.execute("""
         SELECT action_type, metadata_json
         FROM snapshots_v2
         WHERE history_id = ?
         ORDER BY id ASC
     """, (history_id,))
-    
-    snapshots = []
-    for row in cursor.fetchall():
-        action_type, metadata_json = row
-        metadata = json.loads(metadata_json)
-        snapshots.append({
-            "action_type": action_type,
-            "metadata": metadata
-        })
-    
-    conn.close()
-    return snapshots
 
+    rows = cursor.fetchall()
+    conn.close()
+
+    return [
+        {
+            "action_type": action_type,
+            "metadata": json.loads(metadata_json)
+        }
+        for action_type, metadata_json in rows
+    ]
 
 def get_active_tweaks() -> list:
     conn = sqlite3.connect(DB_PATH, timeout=10.0)
     cursor = conn.cursor()
-    
+
     cursor.execute("""
-        SELECT id, tweak_id, applied_at
+        SELECT id, tweak_id, applied_at, status
         FROM tweak_history
         WHERE status = 'applied'
         ORDER BY applied_at DESC
     """)
-    
-    tweaks = []
-    for row in cursor.fetchall():
-        tweaks.append({
-            "id": row[0],
-            "tweak_id": row[1],
-            "applied_at": row[2]
-        })
-    
+
+    rows = cursor.fetchall()
     conn.close()
-    return tweaks
 
-
-def mark_noop(history_id: int):
+    return [
+        {
+            "id": r[0],
+            "tweak_id": r[1],
+            "applied_at": r[2],
+            "status": r[3],
+        }
+        for r in rows
+    ]
+    
+def clear_snapshots(history_id: int):
     conn = sqlite3.connect(DB_PATH, timeout=10.0)
     cursor = conn.cursor()
-    
+
     cursor.execute("""
-        UPDATE tweak_history
-        SET status = 'noop'
-        WHERE id = ?
+        DELETE FROM snapshots_v2
+        WHERE history_id = ?
     """, (history_id,))
-    
+
     conn.commit()
     conn.close()
+    
+def is_reverted(history_id: int) -> bool:
+    conn = sqlite3.connect(DB_PATH, timeout=10.0)
+    cursor = conn.cursor()
+
+    cursor.execute(
+        "SELECT status FROM tweak_history WHERE id = ?",
+        (history_id,)
+    )
+    row = cursor.fetchone()
+    conn.close()
+
+    return row is not None and row[0] == "reverted"
+
+def get_latest_history_by_tweak_id(tweak_id: str):
+    conn = sqlite3.connect(DB_PATH, timeout=10.0)
+    cursor = conn.cursor()
+
+    cursor.execute(
+        """
+        SELECT id, status
+        FROM tweak_history
+        WHERE tweak_id = ?
+        ORDER BY applied_at DESC
+        LIMIT 1
+        """,
+        (tweak_id,)
+    )
+
+    row = cursor.fetchone()
+    conn.close()
+    return row
 
 
 init_db()

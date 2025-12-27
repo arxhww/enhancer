@@ -21,17 +21,12 @@ class TweakValidator:
     def __init__(self):
         pass
 
-    def validate_definition(self, definition: Dict[str, Any], partial: bool = False) -> None:
-        """
-        Validates a single tweak definition.
-        Raises ValidationError if invalid.
-        """
+    def validate_definition(self, definition: Dict[str, Any]) -> None:
+        self._validate_definition_internal(definition, partial=False)
+
+    def _validate_definition_internal(self, definition: Dict[str, Any], partial: bool = False) -> None:
         self._validate_mandatory_fields(definition)
         self._validate_id_format(definition["id"])
-        self._validate_tier_risk_consistency(definition)
-        self._validate_scope_boot_consistency(definition)
-        self._validate_rollback_logic(definition)
-        self._validate_action_integrity(definition)
         
         declared_version = definition.get("schema_version", 1)
         if declared_version != SCHEMA_VERSION:
@@ -39,25 +34,28 @@ class TweakValidator:
                 f"Schema version mismatch. Tweak declares v{declared_version}, "
                 f"Engine requires v{SCHEMA_VERSION}."
             )
+        
+        self._validate_tier_risk_consistency(definition)
+        self._validate_scope_boot_consistency(definition)
+        self._validate_rollback_logic(definition)
+        
         if not partial:
             self._validate_verify_semantics(definition)
-
+            
+        self._validate_action_integrity(definition)
+        
     def validate_composition(
         self, 
         batch: List[Dict[str, Any]], 
         active_tweak_ids: List[str]
     ) -> None:
-        """
-        Validates a batch of tweaks against TWEAK_RULES.
-        Raises ValidationError if the batch is invalid.
-        """
         if not batch:
             raise ValidationError("Batch cannot be empty.")
         
         parsed_tweaks = []
         for t_def in batch:
             try:
-                self.validate_definition(t_def, partial=True)
+                self._validate_definition_internal(t_def, partial=True) 
                 parsed_tweaks.append(t_def)
             except ValidationError as e:
                 raise ValidationError(f"Invalid tweak in batch: {e}")

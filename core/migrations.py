@@ -12,9 +12,9 @@ def migrate_to_v2():
     
     if "schema_version" not in columns:
         print("[MIGRATION] Adding 'schema_version' column...")
-        cursor.execute("ALTER TABLE tweak_history ADD COLUMN schema_version INTEGER")
-        cursor.execute("UPDATE tweak_history SET schema_version = 1 WHERE schema_version IS NULL")
-
+        cursor.execute("ALTER TABLE tweak_history ADD COLUMN schema_version TEXT")
+        cursor.execute("UPDATE tweak_history SET schema_version = '1' WHERE schema_version IS NULL")
+    
     if "verified_at" not in columns:
         print("[MIGRATION] Adding 'verified_at' column...")
         cursor.execute("ALTER TABLE tweak_history ADD COLUMN verified_at TIMESTAMP")
