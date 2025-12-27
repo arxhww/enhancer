@@ -21,7 +21,7 @@ class TweakValidator:
     def __init__(self):
         pass
 
-    def validate_definition(self, definition: Dict[str, Any]) -> None:
+    def validate_definition(self, definition: Dict[str, Any], partial: bool = False) -> None:
         """
         Validates a single tweak definition.
         Raises ValidationError if invalid.
@@ -31,7 +31,6 @@ class TweakValidator:
         self._validate_tier_risk_consistency(definition)
         self._validate_scope_boot_consistency(definition)
         self._validate_rollback_logic(definition)
-        self._validate_verify_semantics(definition)
         self._validate_action_integrity(definition)
         
         declared_version = definition.get("schema_version", 1)
@@ -40,6 +39,8 @@ class TweakValidator:
                 f"Schema version mismatch. Tweak declares v{declared_version}, "
                 f"Engine requires v{SCHEMA_VERSION}."
             )
+        if not partial:
+            self._validate_verify_semantics(definition)
 
     def validate_composition(
         self, 
@@ -56,7 +57,7 @@ class TweakValidator:
         parsed_tweaks = []
         for t_def in batch:
             try:
-                self.validate_definition(t_def) 
+                self.validate_definition(t_def, partial=True)
                 parsed_tweaks.append(t_def)
             except ValidationError as e:
                 raise ValidationError(f"Invalid tweak in batch: {e}")

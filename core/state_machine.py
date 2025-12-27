@@ -40,21 +40,20 @@ class TweakStateMachine:
             WHERE id = ?
         """, (status_str, self.history_id))
         
-        if context:
-            if "error_message" in context:
-                cursor.execute("""
-                    UPDATE tweak_history
-                    SET error_message = ?
-                    WHERE id = ?
-                """, (context["error_message"], self.history_id))
-            
-            if new_state == TweakState.VERIFIED:
-                verified_at = context.get("verified_at", datetime.now())
-                cursor.execute("""
-                    UPDATE tweak_history
-                    SET verified_at = ?
-                    WHERE id = ?
-                """, (verified_at, self.history_id))
+        if new_state == TweakState.VERIFIED:
+            ts = (context or {}).get("verified_at", datetime.now())
+            cursor.execute("""
+                UPDATE tweak_history
+                SET verified_at = ?
+                WHERE id = ?
+            """, (ts, self.history_id))
+        
+        if context and "error_message" in context:
+            cursor.execute("""
+                UPDATE tweak_history
+                SET error_message = ?
+                WHERE id = ?
+            """, (context["error_message"], self.history_id))
 
         conn.commit()
         conn.close()
