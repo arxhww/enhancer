@@ -8,99 +8,41 @@ from .actions.verify_action import create_verify_action
 from .actions.base import Action, ActionSnapshot
 from .tweak_id import TweakID, validate_tweak_definition
 from .recovery import mark_applying
-
+from .validation import TweakValidator, ValidationError
 
 class TweakManager:
     
     def __init__(self):
-        pass
+        self.validator = TweakValidator()
     
     def load_tweak(self, tweak_path: Path) -> dict:
         with open(tweak_path, 'r', encoding='utf-8') as f:
             tweak_def = json.load(f)
         
-        validate_tweak_definition(tweak_def)
-        
+        try:
+            self.validator.validate_definition(tweak_def)
+        except ValidationError as e:
+            print(f"[ERROR] Invalid Tweak Definition in {tweak_path.name}")
+            print(f"  Reason: {e}")
+            raise
+            
         return tweak_def
-    
+
     def apply(self, tweak_path: Path) -> bool:
         tweak = self.load_tweak(tweak_path)
         tweak_id = TweakID.parse(tweak["id"])
         
-        active_tweaks = rollback.get_active_tweaks()
-        for t in active_tweaks:
-            existing_id = TweakID.parse(t['tweak_id'])
-            if existing_id.base_id == tweak_id.base_id:
-                print(f"\n[SKIP] Tweak base '{tweak_id.base_id}' already active (version {existing_id.version})")
-                print(f"  Revert first if you want to apply version {tweak_id.version}")
-                return False
-        
-        if "verify" in tweak["actions"]:
-            print(f"\n[PRE-CHECK] Verifying current state of '{tweak_id}'...")
-            
-            verify_actions = [
-                create_verify_action(v) for v in tweak["actions"]["verify"]
-            ]
-            
-            all_verified = all(action.verify() for action in verify_actions)
-            
-            if all_verified:
-                print(f"[SKIP] System already meets requirements")
-                
-                history_id = rollback.create_history_entry(str(tweak_id))
-                rollback.mark_noop(history_id)
-                
-                return True
-        
-        print(f"\n[TWEAK] Applying: {tweak['name']}")
-        print(f"[INFO] {tweak['description']}")
-        print(f"[ID] {tweak_id}")
-        
-        history_id = rollback.create_history_entry(str(tweak_id))
+        active_tweaks_data = rollback.get_active_tweaks()
+        active_ids = [t['tweak_id'] for t in active_tweaks_data]
         
         try:
-            mark_applying(history_id)
-            
-            apply_actions = [create_action(a) for a in tweak["actions"]["apply"]]
-            
-            print(f"\n[SNAPSHOT] Capturing current state ({len(apply_actions)} actions)...")
-            snapshots: List[ActionSnapshot] = []
-            for i, action in enumerate(apply_actions, 1):
-                print(f"  [{i}/{len(apply_actions)}] {action.get_description()}")
-                snap = action.snapshot()
-                snapshots.append(snap)
-                rollback.save_snapshot_v2(history_id, snap)
-            
-            print(f"\n[APPLY] Executing changes...")
-            for i, action in enumerate(apply_actions, 1):
-                print(f"  [{i}/{len(apply_actions)}] {action.get_description()}")
-                action.apply()
-            
-            print(f"\n[VERIFY] Verifying results...")
-            for i, action in enumerate(apply_actions, 1):
-                if not action.verify():
-                    raise Exception(
-                        f"Verification failed for action {i}: {action.get_description()}"
-                    )
-                print(f"  [{i}/{len(apply_actions)}] ✓")
-            
-            rollback.mark_success(history_id)
-            print(f"\nTweak '{tweak['name']}' applied successfully")
-            return True
-            
-        except Exception as e:
-            print(f"\nError applying tweak: {e}")
-            print(f"[ROLLBACK] Reverting changes...")
-            
-            try:
-                self._rollback(history_id)
-                rollback.mark_rolled_back(history_id, str(e))
-                print(f"Rollback completed successfully")
-            except Exception as rb_error:
-                print(f"CRITICAL: Rollback also failed: {rb_error}")
-                rollback.mark_rolled_back(history_id, f"Apply failed: {e} | Rollback failed: {rb_error}")
-            
+            self.validator.validate_composition([tweak], active_ids)
+        except ValidationError as e:
+            print(f"[ERROR] Composition Check Failed")
+            print(f"  Reason: {e}")
             return False
+
+        return True
     
     def revert(self, tweak_id_str: str) -> bool:
         try:
