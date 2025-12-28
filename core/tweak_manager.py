@@ -1,9 +1,9 @@
 import json
-import sqlite3
 from pathlib import Path
-from typing import List, Tuple, Optional
+from typing import List, Tuple, Optional, Any, Dict
 
 from .executor import Executor
+
 from . import rollback
 from .actions.factory import create_action, create_action_from_snapshot
 from .actions.verify_action import create_verify_action
@@ -16,12 +16,14 @@ from .constants import SCHEMA_VERSION
 from .migrations import migrate_to_v2
 
 
+def _hook(event: str, ctx: Dict[str, Any]) -> None:
+    pass
+
+
 class TweakManager:
 
     def __init__(self):
         self.validator = TweakValidator()
-        self._rollback_execution = self._execute_rollback_steps
-
         try:
             migrate_to_v2()
         except Exception as e:
@@ -36,22 +38,32 @@ class TweakManager:
     def apply(self, tweak_path: Path) -> bool:
         sm: Optional[TweakStateMachine] = None
 
+        ctx: Dict[str, Any] = {
+            "command": "apply",
+            "tweak_path": str(tweak_path),
+        }
+
         try:
             tweak = self.load_tweak(tweak_path)
-            tweak_id = tweak["id"]
             
+            tweak_id = TweakID.parse(tweak["id"])
+            
+            ctx["tweak_id"] = str(tweak_id)
+
             active_ids = [t['tweak_id'] for t in rollback.get_active_tweaks()]
             self.validator.validate_composition([tweak], active_ids)
 
-            verify_list = tweak["actions"].get("verify", [])
-            if verify_list:
-                ok, _ = self._run_verify_phase(verify_list, is_precheck=True)
+            if "verify" in tweak["actions"]:
+                ok, _ = self._run_verify_phase(tweak["actions"]["verify"], is_precheck=True)
                 if ok:
                     print("\n[NOOP] System already meets requirements.")
+                    ctx["result"] = "noop"
                     return True
 
             history_id = rollback.create_history_entry(str(tweak_id))
+            
             self._persist_schema_version(history_id, SCHEMA_VERSION)
+            ctx["history_id"] = history_id
 
             sm = TweakStateMachine(history_id)
             sm.transition("validate")
@@ -62,85 +74,43 @@ class TweakManager:
                 rollback.save_snapshot_v2(history_id, snap)
 
             v_sem = tweak.get("verify_semantics", "runtime")
-
             if v_sem == "runtime":
                 verify_list = tweak["actions"].get("verify", [])
                 if verify_list:
-                    ok, _ = self._run_verify_phase(
-                        verify_list,
-                        is_precheck=False
-                    )
+                    ok, _ = self._run_verify_phase(verify_list, is_precheck=False)
                     if not ok:
-                        sm.transition(
-                            "fail",
-                            {"error_message": "Post-apply verification failed"}
-                        )
-                        raise Exception("Verification failed")
+                        raise Exception("Post-apply verification failed")
 
                 sm.transition("success")
                 sm.transition("verify")
-
-                rollback.mark_applied(history_id)
-
                 print(f"\n[SUCCESS] Tweak '{tweak['name']}' applied and verified.")
+                
+                ctx["result"] = "success"
                 return True
 
             sm.transition("verify_defer")
             print(f"\n[SUCCESS] Tweak applied. Verification deferred.")
+            
+            ctx["result"] = "success_deferred"
             return True
 
         except Exception as e:
             print(f"\n[ERROR] {e}")
-            print("[INFO] Marking operation as FAILED...")
+            print("[INFO] Initiating Rollback...")
             try:
                 if sm:
                     sm.transition("fail", {"error_message": str(e)})
-            except Exception:
-                pass
+                    self._execute_rollback_steps(sm.history_id)
+            except Exception as rb_err:
+                print(f"[CRITICAL] Rollback Failed: {rb_err}")
+                if sm:
+                    sm.transition("fail", {"error_message": f"Apply: {e} | Rollback: {rb_err}"})
+            
+            ctx["result"] = "failure"
+            ctx["error"] = e
             return False
-
-    def revert(self, tweak_id_str: str) -> bool:
-        try:
-            tid = TweakID.parse(tweak_id_str)
-
-            conn = sqlite3.connect(rollback.DB_PATH)
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT id, status
-                FROM tweak_history
-                WHERE tweak_id = ?
-                ORDER BY id DESC
-                LIMIT 1
-            """, (str(tid),))
-            row = cursor.fetchone()
-            conn.close()
-
-            if not row:
-                print(f"[INFO] Tweak '{tid}' not found.")
-                return True
-
-            history_id, status = row
-
-            if status == "reverted":
-                print(f"[INFO] Tweak '{tid}' already reverted. Hard NOOP.")
-                return True
-
-            if status in ("defined", "validated"):
-                print(f"[WARN] Cannot revert '{tid}' from state '{status}'.")
-                return True
-
-            sm = TweakStateMachine(history_id)
-            sm.transition("revert")
-
-            self._rollback_execution(history_id)
-
-            sm.transition("success")
-            print(f"\n[SUCCESS] Tweak '{tid}' reverted.")
-            return True
-
-        except Exception as e:
-            print(f"[ERROR] Revert failed: {e}")
-            return True
+        finally:
+            _hook("apply", dict(ctx))
 
     def _run_apply_phase(self, apply_actions_list: list) -> List[ActionSnapshot]:
         class ApplyStep:
@@ -154,13 +124,12 @@ class TweakManager:
 
         actions = [create_action(a) for a in apply_actions_list]
         steps = [ApplyStep(a) for a in actions]
+
         executor = Executor()
         return executor.run_steps(steps)
 
     def _run_verify_phase(
-        self,
-        verify_actions_list: list,
-        is_precheck: bool
+        self, verify_actions_list: list, is_precheck: bool
     ) -> Tuple[bool, str]:
 
         label = "PRE-CHECK" if is_precheck else "VERIFY"
@@ -183,20 +152,26 @@ class TweakManager:
         return all(results), "Verification complete"
 
     def _persist_schema_version(self, history_id: int, version: int):
-        conn = sqlite3.connect(rollback.DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute(
-            "UPDATE tweak_history SET schema_version = ? WHERE id = ?",
-            (version, history_id)
+        import sqlite3
+
+        conn = sqlite3.connect(
+            rollback.DB_PATH if hasattr(rollback, 'DB_PATH') else "enhancer.db"
         )
-        conn.commit()
-        conn.close()
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                "UPDATE tweak_history SET schema_version = ? WHERE id = ?",
+                (version, history_id)
+            )
+            conn.commit()
+        finally:
+            conn.close()
 
     def _execute_rollback_steps(self, history_id: int):
         raw_snapshots = rollback.get_snapshots_v2(history_id)
         if not raw_snapshots:
             raise RuntimeError("Rollback invoked with zero snapshots")
-
+        
         class RollbackStep:
             def __init__(self, action, snapshot):
                 self.action = action
@@ -213,7 +188,55 @@ class TweakManager:
 
         executor = Executor()
         executor.run_steps(steps)
-        print("  Rollback steps completed successfully.")
+        print("  Rollback completed successfully.")
+
+    
+    def revert(self, tweak_id_str: str) -> bool:
+        ctx = {
+            "command": "revert",
+            "tweak_id": tweak_id_str,
+        }
+
+        try:
+            tid = TweakID.parse(tweak_id_str)
+            rows = rollback.get_active_tweaks()
+            target = next((r for r in rows if r['tweak_id'] == str(tid)), None)
+            
+            if not target:
+                print(f"[INFO] Tweak '{tid}' is not active. Nothing to do.")
+                ctx["result"] = "noop"
+                return True
+
+            history_id = target['id']
+            ctx["history_id"] = history_id
+
+            sm = TweakStateMachine(history_id)
+            current = sm.get_current_state()
+
+            if current == TweakState.REVERTED:
+                print("[INFO] Tweak is already reverted. Idempotent operation.")
+                ctx["result"] = "noop"
+                return True
+
+            if current == TweakState.APPLYING:
+                raise RuntimeError(f"Cannot revert '{tid}' while it is being applied.")
+
+            sm.transition("revert")
+            self._execute_rollback_steps(history_id)
+            sm.transition("success")
+            
+            ctx["result"] = "success"
+            print(f"\n[SUCCESS] Tweak '{tid}' reverted.")
+            return True
+
+        except Exception as e:
+            ctx["result"] = "failure"
+            ctx["error"] = e
+            print(f"[ERROR] Revert failed: {e}")
+            return False
+
+        finally:
+            _hook("revert", dict(ctx))
 
     def list_active(self) -> None:
         tweaks = rollback.get_active_tweaks()
