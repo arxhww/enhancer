@@ -27,7 +27,7 @@ class RecoveryManager:
         cursor.execute("""
             SELECT id, tweak_id, applied_at
             FROM tweak_history
-            WHERE status = 'pending'
+            WHERE status IN ('pending', 'defined')
         """)
         for hid, tid, ts in cursor.fetchall():
             issues.append({

@@ -9,42 +9,44 @@ class TweakState(Enum):
     APPLIED_UNVERIFIED = "applied_unverified"
     VERIFIED = "verified"
     FAILED = "failed"
-    REVERTED = "reverted"
+    REVERTING = "reverting" 
+    REVERTED = "reverted"  
     ORPHANED = "orphaned"
 
 TRANSITIONS: Dict['TweakState', Dict[str, 'TweakState']] = {
     TweakState.DEFINED: {
         "validate": TweakState.VALIDATED,
+        "apply_success": TweakState.APPLIED,
     },
     TweakState.VALIDATED: {
         "apply": TweakState.APPLYING,
     },
     TweakState.APPLYING: {
         "success": TweakState.APPLIED,
-        "verify_defer": TweakState.APPLIED_UNVERIFIED,
+        "apply_success": TweakState.APPLIED, 
         "fail": TweakState.FAILED,
     },
     TweakState.APPLIED: {
         "verify": TweakState.VERIFIED,
-        "revert": TweakState.REVERTED,
+        "revert": TweakState.REVERTING,
     },
     TweakState.APPLIED_UNVERIFIED: {
         "verify": TweakState.VERIFIED,
-        "revert": TweakState.REVERTED,
+        "revert": TweakState.REVERTING,
     },
     TweakState.VERIFIED: {
-        "revert": TweakState.REVERTED,
+        "revert": TweakState.REVERTING,
     },
     TweakState.FAILED: {
-        "revert": TweakState.REVERTED 
+        "revert": TweakState.REVERTING,
     },
-    TweakState.REVERTED: {
+    TweakState.REVERTING: {
+        "success": TweakState.REVERTED,
+        "fail": TweakState.FAILED,
     },
-    TweakState.ORPHANED: {} 
+    TweakState.REVERTED: {}, 
+    TweakState.ORPHANED: {},
 }
 
-def can_transition(current: TweakState, action: str) -> bool:
-    valid_actions = TRANSITIONS.get(current)
-    if not valid_actions:
-        return False
-    return action in valid_actions
+def can_transition(state: TweakState, action: str) -> bool:
+    return action in TRANSITIONS.get(state, {})

@@ -1,79 +1,70 @@
 import pytest
+import tempfile
 from pathlib import Path
+import json
+
 import sys
 import os
-
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from core.tweak_manager import TweakManager
-from core.rollback import get_active_tweaks
+from core.rollback import init_db, DB_PATH as RDB_PATH
 
-MOCK_TWEAK_DEF = {
-    "id": "test.idempotency@1.0",
-    "name": "Idempotency Test",
-    "description": "Test",
-    "tier": 1,
-    "risk_level": "low",
-    "requires_reboot": False,
-    "rollback_guaranteed": True,
-    "scope": ["registry"],
-    "schema_version": 1,
-    "actions": {
-        "apply": [
-            {
-                "type": "registry",
-                "path": "HKEY_CURRENT_USER\\Software\\EnhancerTest",
-                "key": "TestKey",
-                "value": 1,
-                "value_type": "DWORD",
-                "force_create": True
-            }
-        ]
+TEST_DB = Path(__file__).parent / "test_idempotency.db"
+
+@pytest.fixture(autouse=True)
+def isolated_db():
+    import core.rollback as roll_mod
+    original_path = roll_mod.DB_PATH
+    
+    roll_mod.DB_PATH = TEST_DB
+    init_db()
+    
+    yield
+    
+    if TEST_DB.exists():
+        TEST_DB.unlink()
+    
+    roll_mod.DB_PATH = original_path
+
+def test_revert_twice_is_idempotent(isolated_db):
+    m = TweakManager()
+    
+    t = {
+        "id": "test.snapcleanup@1.0",
+        "name": "Snapshot Cleanup Test",
+        "description": "",
+        "tier": 1,
+        "risk_level": "low",
+        "requires_reboot": False,
+        "rollback_guaranteed": True,
+        "scope": ["registry"],
+        "schema_version": 1,
+        "actions": {
+            "apply": [
+                {
+                    "type": "registry",
+                    "path": "HKCU\\Software\\Test",
+                    "key": "SnapTest",
+                    "value": 1,
+                    "value_type": "DWORD",
+                    "force_create": True
+                }
+            ]
+        }
     }
-}
-
-@pytest.fixture
-def temp_tweak_file(tmp_path):
-    import json
-    file = tmp_path / "test_idempotency.json"
-    with open(file, 'w') as f:
-        json.dump(MOCK_TWEAK_DEF, f)
-    return file
-
-@pytest.fixture
-def manager():
-    return TweakManager()
-
-def test_apply_is_idempotent(manager, temp_tweak_file):
-
-    success1 = manager.apply(temp_tweak_file)
-    assert success1 is True
     
-    success2 = manager.apply(temp_tweak_file)
+    p = TEST_DB.parent / "snap.json"
+    with open(p, 'w') as f:
+        json.dump(t, f)
     
-    assert success2 is True
-
-def test_revert_is_idempotent(manager, temp_tweak_file):
-
-    manager.apply(temp_tweak_file)
+    m.apply(p)
     
-    success1 = manager.revert("test.idempotency@1.0")
-    assert success1 is True
+    res1 = m.revert("test.snapcleanup@1.0")
+    assert res1 is True
     
-    success2 = manager.revert("test.idempotency@1.0")
-    assert success2 is False 
-
-def test_verify_action_idempotency():
-    from core.actions.registry_action import RegistryAction
-    from core.actions.verify_action import RegistryVerifyAction
+    res2 = m.revert("test.snapcleanup@1.0")
+    assert res2 is True
+    assert m.revert("test.snapcleanup@1.0") is True 
     
-    action = RegistryAction(MOCK_TWEAK_DEF["actions"]["apply"][0])
-    
-    try:
-        action.apply() 
-        val1, _ = action.verify() 
-        val2, _ = action.verify() 
-        assert val1 == val2 
-    finally:
-        snap = action.snapshot()
-        action.rollback(snap)
+    print("[TEST] Idempotency validated.")

@@ -1,0 +1,1 @@
+{"id": "test.snapcleanup@1.0", "name": "Snapshot Cleanup Test", "description": "", "tier": 1, "risk_level": "low", "requires_reboot": false, "rollback_guaranteed": true, "scope": ["registry"], "schema_version": 1, "actions": {"apply": [{"type": "registry", "path": "HKCU\\Software\\Test", "key": "SnapTest", "value": 1, "value_type": "DWORD", "force_create": true}]}}

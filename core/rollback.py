@@ -26,7 +26,8 @@ def init_db():
             reverted_at TIMESTAMP,
             verified_at TIMESTAMP,
             status TEXT NOT NULL,
-            error_message TEXT
+            error_message TEXT,
+            schema_version INTEGER NOT NULL DEFAULT 1
         )
     """)
 
@@ -65,7 +66,7 @@ def create_history_entry(tweak_id: str) -> int:
     cursor.execute("""
         INSERT INTO tweak_history (tweak_id, applied_at, status)
         VALUES (?, ?, ?)
-    """, (tweak_id, TIME.now(), "pending"))
+    """, (tweak_id, TIME.now(), "defined")) 
 
     history_id = cursor.lastrowid
     conn.commit()
@@ -81,34 +82,6 @@ def save_snapshot_v2(history_id: int, snapshot):
         INSERT INTO snapshots_v2 (history_id, action_type, metadata_json)
         VALUES (?, ?, ?)
     """, (history_id, snapshot.action_type, json.dumps(snapshot.metadata)))
-
-    conn.commit()
-    conn.close()
-
-
-def mark_reverted(history_id: int):
-    conn = sqlite3.connect(DB_PATH, timeout=10.0)
-    cursor = conn.cursor()
-
-    cursor.execute("""
-        UPDATE tweak_history
-        SET status = 'reverted',
-            reverted_at = ?
-        WHERE id = ?
-    """, (TIME.now(), history_id))
-
-    conn.commit()
-    conn.close()
-    
-def mark_applied(history_id: int):
-    conn = sqlite3.connect(DB_PATH, timeout=10.0)
-    cursor = conn.cursor()
-
-    cursor.execute("""
-        UPDATE tweak_history
-        SET status = 'applied'
-        WHERE id = ?
-    """, (history_id,))
 
     conn.commit()
     conn.close()
@@ -202,6 +175,20 @@ def get_latest_history_by_tweak_id(tweak_id: str):
     row = cursor.fetchone()
     conn.close()
     return row
+
+def mark_applied(history_id: int):
+    conn = sqlite3.connect(DB_PATH, timeout=10.0)
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        UPDATE tweak_history
+        SET status = 'applied'
+        WHERE id = ?
+    """, (history_id,))
+
+    conn.commit()
+    conn.close()
+
 
 
 init_db()

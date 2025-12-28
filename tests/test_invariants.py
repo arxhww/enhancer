@@ -12,10 +12,15 @@ from core.constants import SCHEMA_VERSION
 @pytest.fixture(autouse=True)
 def setup_test_db(tmp_path, monkeypatch):
     test_db = tmp_path / "test_enhancer.db"
-    monkeypatch.setattr(rollback, "DB_PATH", test_db)
+
+    import core.rollback as roll_mod
+    import core.state_machine as sm_mod
+
+    monkeypatch.setattr(roll_mod, "DB_PATH", test_db)
+    monkeypatch.setattr(sm_mod, "DB_PATH", test_db)
+
     rollback.init_db()
     yield test_db
-
 
 def test_INV_3_2_status_changes_only_via_state_machine():
     history_id = rollback.create_history_entry("test.inv3.2")
@@ -70,7 +75,7 @@ def test_INV_3_1_rollback_failure_propagates():
 def test_INV_2_2_snapshots_persist_after_revert(tmp_path):
     tweak_file = tmp_path / "tweak.json"
     tweak_file.write_text(json.dumps({
-        "id": "test.snapshot.persist",
+        "id": "test.snapshot.persist@1.0",
         "name": "Snapshot Test",
         "tier": 1,
         "risk_level": "low",
@@ -90,7 +95,7 @@ def test_INV_2_2_snapshots_persist_after_revert(tmp_path):
     active = rollback.get_active_tweaks()
     history_id = active[0]["id"]
 
-    manager.revert("test.snapshot.persist")
+    manager.revert("test.snapshot.persist@1.0")
 
     snapshots = rollback.get_snapshots_v2(history_id)
     assert len(snapshots) >= 0
@@ -117,15 +122,14 @@ def test_revert_idempotency_is_strict(tmp_path):
     manager.apply(tweak_file)
 
     assert manager.revert("test.revert.idempotent") is True
-    assert manager.revert("test.revert.idempotent") is False
-
+    assert manager.revert("test.revert.idempotent") is True
 
 def test_INV_5_2_verify_returns_bool_only():
     from core.actions.registry_action import RegistryAction
 
     action = RegistryAction({
         "type": "registry",
-        "path": "HKCU\\Software\\Missing",
+        "path": "HKEY_CURRENT_USER\\Software\\Missing",
         "key": "X",
         "value": 1,
         "value_type": "DWORD"

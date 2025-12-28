@@ -1,59 +1,87 @@
 import sqlite3
 from pathlib import Path
+from typing import Optional, Dict, Any
 
-from .tweak_state import TweakState, can_transition, TRANSITIONS
+from .tweak_state import TweakState, TRANSITIONS
 from .time import DEFAULT_TIME_PROVIDER as TIME
 
 DB_PATH = Path(__file__).parent.parent / "enhancer.db"
 
-
 class TweakStateMachine:
 
-    def __init__(self, history_id: int, current_state: str):
+    def __init__(self, history_id: int):
         self.history_id = history_id
-        try:
-            self.current_state = TweakState(current_state)
-        except ValueError:
-            self.current_state = TweakState.ORPHANED
 
-    def transition(self, action: str, context: dict = None) -> TweakState:
-        if not can_transition(self.current_state, action):
-            valid = list(TRANSITIONS.get(self.current_state, {}).keys())
-            raise ValueError(
-                f"Invalid transition: {self.current_state.value} --[{action}]--> ?. "
-                f"Valid actions from {self.current_state.value}: {valid}"
-            )
-
-        next_state = TRANSITIONS[self.current_state][action]
-        self._persist_state(next_state, context)
-
-        self.current_state = next_state
-        return next_state
-
-    def _persist_state(self, new_state: TweakState, context: dict = None):
+    def transition(self, action: str, context: Optional[Dict[str, Any]] = None) -> TweakState:
         conn = sqlite3.connect(DB_PATH)
         cursor = conn.cursor()
 
-        cursor.execute("""
-            UPDATE tweak_history
-            SET status = ?
-            WHERE id = ?
-        """, (new_state.value, self.history_id))
+        try:
+            conn.execute("BEGIN IMMEDIATE")
 
-        if new_state == TweakState.VERIFIED:
-            ts = (context or {}).get("verified_at", TIME.now())
+            cursor.execute("SELECT status FROM tweak_history WHERE id = ?", (self.history_id,))
+            row = cursor.fetchone()
+
+            if not row:
+                raise AssertionError(f"ORPHANED history_id: {self.history_id}")
+
+            current_state = TweakState(row[0])
+
+            valid_actions = TRANSITIONS.get(current_state, {})
+            if action not in valid_actions:
+                valid = list(valid_actions.keys())
+                raise AssertionError(
+                    f"INVALID TRANSITION: {current_state.value} --[{action}]--> ? "
+                    f"Valid: {valid}"
+                )
+
+            next_state = valid_actions[action]
+
             cursor.execute("""
                 UPDATE tweak_history
-                SET verified_at = ?
+                SET status = ?
                 WHERE id = ?
-            """, (ts, self.history_id))
+            """, (next_state.value, self.history_id))
 
-        if context and "error_message" in context:
-            cursor.execute("""
-                UPDATE tweak_history
-                SET error_message = ?
-                WHERE id = ?
-            """, (context["error_message"], self.history_id))
+            if context:
+                if "error_message" in context:
+                    cursor.execute("""
+                        UPDATE tweak_history
+                        SET error_message = ?
+                        WHERE id = ?
+                    """, (context["error_message"], self.history_id))
+                
+                if "verified_at" in context:
+                    cursor.execute("""
+                        UPDATE tweak_history
+                        SET verified_at = ?
+                        WHERE id = ?
+                    """, (context["verified_at"], self.history_id))
 
-        conn.commit()
-        conn.close()
+            if next_state == TweakState.REVERTED:
+                cursor.execute("""
+                    DELETE FROM snapshots_v2
+                    WHERE history_id = ?
+                """, (self.history_id,))
+                print(f"  [CLEANUP] Snapshots consumed for history_id {self.history_id}.")
+
+            conn.commit()
+            return next_state
+
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
+    def get_current_state(self) -> TweakState:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        try:
+            cursor.execute("SELECT status FROM tweak_history WHERE id = ?", (self.history_id,))
+            row = cursor.fetchone()
+            if not row:
+                return TweakState.ORPHANED
+            return TweakState(row[0])
+        finally:
+            conn.close()
