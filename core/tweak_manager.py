@@ -14,7 +14,7 @@ from .validation import TweakValidator
 from .constants import SCHEMA_VERSION
 from .migrations import migrate_to_v2
 
-def _hook(event: str, ctx: dict) -> None:
+def _hook(event: str, ctx: Dict[str, Any]) -> None:
     pass
 
 class TweakManager:
@@ -34,6 +34,8 @@ class TweakManager:
         return tweak_def
 
     def apply(self, tweak_path: Path) -> bool:
+        tweak_path = tweak_path.resolve()
+
         sm: Optional[TweakStateMachine] = None
 
         ctx: Dict[str, Any] = {
@@ -52,16 +54,13 @@ class TweakManager:
                 history_id = existing["id"]
                 sm = TweakStateMachine(history_id)
                 state = sm.get_current_state()
-
                 ctx["history_id"] = history_id
 
                 if state == TweakState.VERIFIED:
                     ctx["result"] = "noop"
                     return True
 
-                if state == TweakState.REVERTED:
-                    pass
-                else:
+                if state != TweakState.REVERTED:
                     raise RuntimeError(f"Cannot apply tweak in state {state}")
 
             else:
@@ -86,8 +85,6 @@ class TweakManager:
             sm.transition("verify")
 
             rollback.mark_applied(history_id)
-
-            print(f"\n[SUCCESS] Tweak '{tweak['name']}' applied and verified.")
 
             ctx["result"] = "success"
             return True
@@ -124,6 +121,7 @@ class TweakManager:
     def _run_verify_phase(
         self, verify_actions_list: list, is_precheck: bool
     ) -> Tuple[bool, str]:
+
         class VerifyStep:
             def __init__(self, action):
                 self.action = action
@@ -200,9 +198,8 @@ class TweakManager:
 
         finally:
             _hook("revert", dict(ctx))
-    
-    def list_active(self) -> None:
 
+    def list_active(self) -> None:
         tweaks = rollback.get_active_tweaks()
         if not tweaks:
             print("\nNo active tweaks found.")
@@ -215,4 +212,3 @@ class TweakManager:
                 f"(Status: {t.get('status', 'unknown')}, "
                 f"Applied: {t['applied_at']})"
             )
-

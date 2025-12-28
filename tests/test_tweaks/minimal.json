@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "id": "test.minimal@1.0",
+  "name": "Minimal Valid Tweak",
+  "description": "Minimal tweak for validation testing",
+  "tier": 0,
+  "risk_level": "low",
+  "requires_reboot": false,
+  "rollback_guaranteed": true,
+  "scope": ["filesystem"],
+  "actions": {
+    "apply": [],
+    "verify": []
+  }
+}
