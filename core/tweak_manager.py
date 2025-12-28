@@ -13,11 +13,9 @@ from .state_machine import TweakStateMachine
 from .validation import TweakValidator
 from .constants import SCHEMA_VERSION
 from .migrations import migrate_to_v2
-import core.rollback as rollback
 
-def _hook(event: str, ctx: Dict[str, Any]) -> None:
+def _hook(event: str, ctx: dict) -> None:
     pass
-
 
 class TweakManager:
 

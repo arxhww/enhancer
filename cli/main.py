@@ -2,67 +2,69 @@ import sys
 import argparse
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent))
+sys.path.insert(0, str(Path(__file__).parent.parent / "infra"))
+from infra.telemetry.dispatcher import manager as telemetry_manager
+from infra.telemetry.logger import LoggerSink
 
-from core.tweak_manager import TweakManager
+import core.tweak_manager as core_manager
 
 
-CMD_HELP = {
-    "apply": "Apply a tweak from a JSON definition file.",
-    "revert": "Revert an active tweak by ID.",
-    "list": "List all currently active tweaks."
-}
+def setup_telemetry(log_file=None):
+    sink = LoggerSink(log_file)
+    telemetry_manager.register_sink(sink)
 
-def cmd_apply(manager, args):
-    try:
-        success = manager.apply(Path(args.tweak))
-        sys.exit(0 if success else 1)
-    except Exception as e:
-        print(f"Error: {e}")
-        sys.exit(1)
+    def hooked_handler(event, ctx):
+        telemetry_manager.dispatch(event, ctx)
 
-def cmd_revert(manager, args):
-    try:
-        success = manager.revert(args.tweak_id)
-        sys.exit(0 if success else 1)
-    except Exception as e:
-        print(f"Error: {e}")
-        sys.exit(1)
+    core_manager._hook = hooked_handler
 
-def cmd_list(manager, args):
-    try:
-        manager.list_active()
-        sys.exit(0)
-    except Exception as e:
-        print(f"Error: {e}")
-        sys.exit(1)
+
+def cmd_apply(args):
+    manager = core_manager.TweakManager()
+    sys.exit(0 if manager.apply(Path(args.tweak)) else 1)
+
+
+def cmd_revert(args):
+    manager = core_manager.TweakManager()
+    sys.exit(0 if manager.revert(args.tweak_id) else 1)
+
+
+def cmd_list(args):
+    manager = core_manager.TweakManager()
+    manager.list_active()
+    sys.exit(0)
 
 
 def main():
-    parser = argparse.ArgumentParser(description="EnhancerCore CLI v1.2.1")
-    subparsers = parser.add_subparsers(dest="command", help="Available sub-commands")
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--log-file", type=str, default=None)
+    known, unknown = parser.parse_known_args()
 
-    parser_apply = subparsers.add_parser("apply", help="Apply a tweak")
-    parser_apply.add_argument("tweak", type=str, help="Path to JSON tweak file")
+    setup_telemetry(log_file=known.log_file)
 
-    parser_revert = subparsers.add_parser("revert", help="Revert an active tweak")
-    parser_revert.add_argument("tweak_id", type=str, help="Tweak ID (e.g. system.disable_search@1.0)")
+    parser2 = argparse.ArgumentParser()
+    sub = parser2.add_subparsers(dest="command")
 
-    parser_list = subparsers.add_parser("list", help="List active tweaks")
+    p_apply = sub.add_parser("apply")
+    p_apply.add_argument("tweak")
 
-    args = parser.parse_args()
+    p_revert = sub.add_parser("revert")
+    p_revert.add_argument("tweak_id")
 
-    manager = TweakManager()
+    sub.add_parser("list")
+
+    args = parser2.parse_args(unknown)
 
     if args.command == "apply":
-        cmd_apply(manager, args)
+        cmd_apply(args)
     elif args.command == "revert":
-        cmd_revert(manager, args)
+        cmd_revert(args)
     elif args.command == "list":
-        cmd_list(manager, args)
+        cmd_list(args)
     else:
-        parser.print_help()
+        parser2.print_help()
         sys.exit(1)
+
 
 if __name__ == "__main__":
     main()
