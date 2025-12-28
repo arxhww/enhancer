@@ -1,95 +1,51 @@
-# EnhancerCore
+# EnhancerCore v1.2.1 - CLI Interface
 
-EnhancerCore is a transactional Windows tweak engine designed to apply, verify, and safely revert system-level configuration changes using declarative JSON files.
+**Formal State Machine v1.2.0 Core + Minimal CLI Interface.**
 
-The engine guarantees:
-- Atomic application of tweaks
-- Full rollback on failure
-- Persistent history tracking
-- Registry state integrity verification
+EnhancerCore is a system-wide tweak engine for Windows 11. It ensures reliability through a formal state machine, idempotent operations, and atomic database transactions.
 
-## Features
+## Installation
 
-- Transactional registry modifications
-- Automatic rollback on error or failed verification
-- SQLite-based tweak history and snapshots
-- Declarative tweak definitions (JSON)
-- Administrator privilege enforcement
-- Optional integrity verification via SHA-256 manifest
+1. Clone the repository.
+2. No external dependencies required. Python ≥ 3.10.
+3. Initialize database (automatic on first run).
 
-## Requirements
+## Usage
 
-### Python mode
-- Windows 10 / 11
-- Python 3.9+
-- Administrator privileges
+The `cli` tool is the recommended user interface for EnhancerCore.
 
-### Binary mode
-- Windows 10 / 11
-- Administrator privileges
-- No Python installation required
+### Apply a Tweak
 
-## Usage (Python)
+Applies a tweak definition file via `TweakManager`.
 
-Apply a tweak:
-```
-python main.py apply tweaks/disable_game_dvr.json
-```
-Revert a tweak:
-```
-python main.py revert 011
-```
-List active tweaks:
-```
-python main.py list
+```bash
+python -m cli apply <tweak_path>
 ```
 
-## Usage (Binary)
-After building, execute:
+### Revert a Tweak
 
-- EnhancerCore.exe apply tweaks/disable_game_dvr.json
-- EnhancerCore.exe revert 011
-- EnhancerCore.exe list
+Reverts an active tweak (Legacy ID or Modern ID) via `TweakManager`.
 
-## Tweak Structure
-
-Tweaks are defined as JSON files with explicit apply and verify phases.
-
-Example (simplified):
-```
-{
-  "id": "011",
-  "name": "Disable Game DVR",
-  "actions": {
-    "apply": [...],
-    "verify": [...]
-  }
-}
-```
-Only JSON files inside the `tweaks/` directory are required to add new functionality.
-
-## Build
-
-To generate a standalone executable:
-```
-python build.py
-```
-The output binary will be located in the `dist/` directory along with the `tweaks/` folder.
-After building, generate the integrity manifest to be placed next to the executable:
-
-## Integrity Manifest
-
-To generate a cryptographic integrity manifest:
-```
-python utils/manifest.py
-```
-The resulting `enhancer_manifest.json` can be used to verify engine integrity.
-
-To verify engine integrity:
-```
-verify_manifest()
+```bash
+python -m cli revert <tweak_id>
 ```
 
-## License
+### List Active Tweaks
 
-This project is provided as-is, without warranty.
+Lists all currently active tweaks.
+
+```bash
+python -m cli list
+```
+
+## Core API
+
+For developers, the core logic is encapsulated in `TweakManager` and `TweakStateMachine`.
+
+```python
+from core.tweak_manager import TweakManager
+
+manager = TweakManager()
+# manager.apply(...)
+# manager.revert(...)
+```
