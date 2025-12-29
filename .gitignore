@@ -1,27 +1,14 @@
 __pycache__/
-*.py[cod]
+*.pyc
 *.pyo
 *.pyd
-*.so
-*.egg-info/
-dist/
-build/
-.eggs/
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-
+.env
 .venv/
 venv/
-ENV/
-env/
 
 *.db
-*.db-wal
 *.db-shm
-
-telemetry.db
-enhancer.db
+*.db-wal
 
 *.log
 
@@ -30,5 +17,6 @@ Thumbs.db
 
 .vscode/
 .idea/
-*.swp
-*.swo
+
+.coverage
+htmlcov/
