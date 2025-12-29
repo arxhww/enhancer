@@ -2,12 +2,10 @@ import sys
 import argparse
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).parent.parent / "infra"))
 from infra.telemetry.dispatcher import manager as telemetry_manager
 from infra.telemetry.logger import LoggerSink
-
 import core.tweak_manager as core_manager
-
+from infra.telemetry.writer import emit as db_emit
 
 def setup_telemetry(log_file=None):
     sink = LoggerSink(log_file)
@@ -15,25 +13,28 @@ def setup_telemetry(log_file=None):
 
     def hooked_handler(event, ctx):
         telemetry_manager.dispatch(event, ctx)
+        db_emit({
+            "event": event,
+            "tweak_id": ctx.get("tweak_id"),
+            "history_id": ctx.get("history_id"),
+            "result": ctx.get("result"),
+            "error": ctx.get("error"),
+        })
 
     core_manager._hook = hooked_handler
-
 
 def cmd_apply(args):
     manager = core_manager.TweakManager()
     sys.exit(0 if manager.apply(Path(args.tweak)) else 1)
 
-
 def cmd_revert(args):
     manager = core_manager.TweakManager()
     sys.exit(0 if manager.revert(args.tweak_id) else 1)
-
 
 def cmd_list(args):
     manager = core_manager.TweakManager()
     manager.list_active()
     sys.exit(0)
-
 
 def main():
     parser = argparse.ArgumentParser(add_help=False)

@@ -13,9 +13,16 @@ from .state_machine import TweakStateMachine
 from .validation import TweakValidator
 from .constants import SCHEMA_VERSION
 from .migrations import migrate_to_v2
+from infra.telemetry.writer import emit
 
-def _hook(event: str, ctx: Dict[str, Any]) -> None:
-    pass
+def _hook(event: str, ctx: dict) -> None:
+    emit({
+        "event": event,
+        "tweak_id": ctx.get("tweak_id"),
+        "history_id": ctx.get("history_id"),
+        "result": ctx.get("result"),
+        "error": str(ctx.get("error")) if ctx.get("error") else None
+    })
 
 class TweakManager:
 
