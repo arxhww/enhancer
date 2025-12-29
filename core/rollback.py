@@ -218,6 +218,58 @@ def get_history_by_tweak_id(tweak_id: str):
         "reverted_at": row[4],
         "verified_at": row[5],
     }
+    
+def get_all() -> list:
+    conn = sqlite3.connect(DB_PATH, timeout=10.0)
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT id, tweak_id, status, applied_at, reverted_at, verified_at
+        FROM tweak_history
+        ORDER BY applied_at ASC
+    """)
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    return [
+        {
+            "id": r[0],
+            "tweak_id": r[1],
+            "status": r[2],
+            "applied_at": r[3],
+            "reverted_at": r[4],
+            "verified_at": r[5],
+        }
+        for r in rows
+    ]
+
+
+def get_by_id(history_id: int):
+    conn = sqlite3.connect(DB_PATH, timeout=10.0)
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT id, tweak_id, status, applied_at, reverted_at, verified_at
+        FROM tweak_history
+        WHERE id = ?
+    """, (history_id,))
+
+    row = cursor.fetchone()
+    conn.close()
+
+    if not row:
+        return None
+
+    return {
+        "id": row[0],
+        "tweak_id": row[1],
+        "status": row[2],
+        "applied_at": row[3],
+        "reverted_at": row[4],
+        "verified_at": row[5],
+    }
+
 
 
 init_db()

@@ -6,6 +6,8 @@ from infra.telemetry.dispatcher import manager as telemetry_manager
 from infra.telemetry.logger import LoggerSink
 import core.tweak_manager as core_manager
 from infra.telemetry.writer import emit as db_emit
+from infra.recovery.manager import RecoveryManager
+
 
 def setup_telemetry(log_file=None):
     sink = LoggerSink(log_file)
@@ -35,6 +37,11 @@ def cmd_list(args):
     manager = core_manager.TweakManager()
     manager.list_active()
     sys.exit(0)
+    
+def cmd_recover(args):
+    rm = RecoveryManager()
+    recovered = rm.recover()
+    sys.exit(0)
 
 def main():
     parser = argparse.ArgumentParser(add_help=False)
@@ -45,6 +52,7 @@ def main():
 
     parser2 = argparse.ArgumentParser()
     sub = parser2.add_subparsers(dest="command")
+    sub.add_parser("recover")
 
     p_apply = sub.add_parser("apply")
     p_apply.add_argument("tweak")
@@ -62,6 +70,8 @@ def main():
         cmd_revert(args)
     elif args.command == "list":
         cmd_list(args)
+    elif args.command == "recover":
+        cmd_recover(args)
     else:
         parser2.print_help()
         sys.exit(1)
