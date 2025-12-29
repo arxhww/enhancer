@@ -20,7 +20,7 @@ def setup_telemetry(log_file=None):
             "tweak_id": ctx.get("tweak_id"),
             "history_id": ctx.get("history_id"),
             "result": ctx.get("result"),
-            "error": ctx.get("error"),
+            "error": str(ctx.get("error")) if ctx.get("error") else None
         })
 
     core_manager._hook = hooked_handler
@@ -40,7 +40,11 @@ def cmd_list(args):
     
 def cmd_recover(args):
     rm = RecoveryManager()
-    recovered = rm.recover()
+    zombies = rm.recover()
+
+    if not zombies:
+        sys.exit(0)
+
     sys.exit(0)
 
 def main():

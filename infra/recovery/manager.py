@@ -1,6 +1,6 @@
 from infra.recovery.detector import scan
 import core.rollback as rollback
-from core.state_machine import TweakStateMachine
+
 
 class RecoveryManager:
     def recover(self) -> list:
@@ -8,16 +8,36 @@ class RecoveryManager:
         recovered = []
 
         for h in zombies:
-            history_id = h["id"]
-            sm = TweakStateMachine(history_id)
+            hid = h["id"]
 
-            sm.transition("fail", {
-                "error_message": "recovered from zombie state"
+            self._force_revert(hid)
+
+            rollback.clear_snapshots(hid)
+
+            recovered.append({
+                "history_id": hid,
+                "tweak_id": h["tweak_id"],
             })
 
-            sm.transition("revert")
-            sm.transition("success")
-
-            recovered.append(history_id)
-
         return recovered
+
+    def _force_revert(self, history_id: int) -> None:
+        import sqlite3
+        from pathlib import Path
+
+        db = Path(__file__).parents[2] / "enhancer.db"
+        conn = sqlite3.connect(db, timeout=10.0)
+        cur = conn.cursor()
+
+        cur.execute(
+            """
+            UPDATE tweak_history
+            SET status = 'reverted',
+                reverted_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (history_id,)
+        )
+
+        conn.commit()
+        conn.close()

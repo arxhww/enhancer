@@ -1,13 +1,7 @@
 import core.rollback as rollback
 
-ZOMBIE_STATES = {"applying", "verifying"}
+ZOMBIE_STATES = {"applying", "verifying", "defined", "failed"}
 
 def scan():
     histories = rollback.get_all()
-
-    zombies = []
-    for h in histories:
-        if h["status"] in ZOMBIE_STATES:
-            zombies.append(h)
-
-    return zombies
+    return [h for h in histories if h["status"] in ZOMBIE_STATES]
