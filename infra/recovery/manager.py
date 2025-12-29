@@ -1,43 +1,61 @@
-from infra.recovery.detector import scan
+import sqlite3
 import core.rollback as rollback
+from infra.recovery.detector import scan
+from core.tweak_manager import TweakManager
 
 
 class RecoveryManager:
-    def recover(self) -> list:
+    def recover(self) -> dict:
         zombies = scan()
-        recovered = []
+
+        detected = len(zombies)
+        recovered = 0
+        failed = 0
+
+        tm = TweakManager()
 
         for h in zombies:
             hid = h["id"]
+            status = h["status"]
 
-            self._force_revert(hid)
+            try:
+                if status in ("applying", "verifying", "failed"):
+                    tm._execute_rollback_steps(hid)
+                    rollback.clear_snapshots(hid)
 
-            rollback.clear_snapshots(hid)
+                    conn = sqlite3.connect(rollback.DB_PATH)
+                    conn.execute(
+                        """
+                        UPDATE tweak_history
+                        SET status = 'reverted',
+                            reverted_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                        """,
+                        (hid,),
+                    )
+                    conn.commit()
+                    conn.close()
 
-            recovered.append({
-                "history_id": hid,
-                "tweak_id": h["tweak_id"],
-            })
+                elif status == "defined":
+                    conn = sqlite3.connect(rollback.DB_PATH)
+                    conn.execute(
+                        """
+                        UPDATE tweak_history
+                        SET status = 'failed'
+                        WHERE id = ?
+                        """,
+                        (hid,),
+                    )
+                    conn.commit()
+                    conn.close()
 
-        return recovered
+                recovered += 1
 
-    def _force_revert(self, history_id: int) -> None:
-        import sqlite3
-        from pathlib import Path
+            except Exception:
+                failed += 1
 
-        db = Path(__file__).parents[2] / "enhancer.db"
-        conn = sqlite3.connect(db, timeout=10.0)
-        cur = conn.cursor()
-
-        cur.execute(
-            """
-            UPDATE tweak_history
-            SET status = 'reverted',
-                reverted_at = CURRENT_TIMESTAMP
-            WHERE id = ?
-            """,
-            (history_id,)
-        )
-
-        conn.commit()
-        conn.close()
+        return {
+            "detected": detected,
+            "recovered": recovered,
+            "failed": failed,
+        }

@@ -1,6 +1,6 @@
 import core.rollback as rollback
 
-ZOMBIE_STATES = {"applying", "verifying", "defined", "failed"}
+ZOMBIE_STATES = {"defined", "applying", "verifying", "failed"}
 
 def scan():
     histories = rollback.get_all()

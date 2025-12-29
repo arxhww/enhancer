@@ -7,7 +7,7 @@ from infra.telemetry.logger import LoggerSink
 import core.tweak_manager as core_manager
 from infra.telemetry.writer import emit as db_emit
 from infra.recovery.manager import RecoveryManager
-
+from infra.verify.detector import run_verification
 
 def setup_telemetry(log_file=None):
     sink = LoggerSink(log_file)
@@ -37,15 +37,30 @@ def cmd_list(args):
     manager = core_manager.TweakManager()
     manager.list_active()
     sys.exit(0)
+
+def cmd_verify(args):
+    invalid = run_verification()
+
+    if not invalid:
+        sys.exit(0)
+
+    sys.exit(2)
     
 def cmd_recover(args):
     rm = RecoveryManager()
-    zombies = rm.recover()
+    result = rm.recover()
 
-    if not zombies:
+    detected = result["detected"]
+    recovered = result["recovered"]
+    failed = result["failed"]
+
+    if detected == 0:
         sys.exit(0)
-
-    sys.exit(0)
+    if recovered == detected:
+        sys.exit(0)
+    if recovered > 0:
+        sys.exit(2)
+    sys.exit(3)
 
 def main():
     parser = argparse.ArgumentParser(add_help=False)
@@ -57,6 +72,7 @@ def main():
     parser2 = argparse.ArgumentParser()
     sub = parser2.add_subparsers(dest="command")
     sub.add_parser("recover")
+    sub.add_parser("verify")
 
     p_apply = sub.add_parser("apply")
     p_apply.add_argument("tweak")
@@ -76,6 +92,8 @@ def main():
         cmd_list(args)
     elif args.command == "recover":
         cmd_recover(args)
+    elif args.command == "verify":
+        cmd_verify(args)
     else:
         parser2.print_help()
         sys.exit(1)
