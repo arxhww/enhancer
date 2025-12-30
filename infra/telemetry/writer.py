@@ -36,7 +36,7 @@ def emit(event: dict):
             event.get("history_id"),
             event["event"],
             event.get("result"),
-            event.get("error"),
+            str(event.get("error")) if event.get("error") else None,
         )
     )
     conn.commit()

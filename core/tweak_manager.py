@@ -219,3 +219,16 @@ class TweakManager:
                 f"(Status: {t.get('status', 'unknown')}, "
                 f"Applied: {t['applied_at']})"
             )
+            
+    def verify(self, tweak_id_str: str) -> bool:
+        row = rollback.get_history_by_tweak_id(tweak_id_str)
+        if not row:
+            return True
+
+        verify_actions = rollback.get_verify_actions(row["id"])
+        if not verify_actions:
+            return True
+
+        ok, _ = self._run_verify_phase(verify_actions, is_precheck=True)
+        return ok
+
