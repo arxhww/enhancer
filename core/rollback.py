@@ -287,6 +287,25 @@ def get_verify_actions(history_id: int) -> list:
 
     return [json.loads(r[0]) for r in rows]
 
+def mark_reverted(history_id: int):
+    import sqlite3
+
+    conn = sqlite3.connect(DB_PATH)
+    try:
+        conn.execute(
+            """
+            UPDATE tweak_history
+            SET status = 'reverted',
+                reverted_at = CURRENT_TIMESTAMP
+            WHERE id = ?
+            """,
+            (history_id,),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+
+
 
 
 init_db()

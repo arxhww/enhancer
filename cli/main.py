@@ -4,10 +4,11 @@ from pathlib import Path
 
 from infra.telemetry.dispatcher import manager as telemetry_manager
 from infra.telemetry.logger import LoggerSink
-import core.tweak_manager as core_manager
 from infra.telemetry.writer import emit as db_emit
-from infra.recovery.manager import RecoveryManager
+
+import core.tweak_manager as core_manager
 from infra.verify.detector import run_verification
+
 
 def setup_telemetry(log_file=None):
     sink = LoggerSink(log_file)
@@ -20,47 +21,38 @@ def setup_telemetry(log_file=None):
             "tweak_id": ctx.get("tweak_id"),
             "history_id": ctx.get("history_id"),
             "result": ctx.get("result"),
-            "error": str(ctx.get("error")) if ctx.get("error") else None
+            "error": str(ctx.get("error")) if ctx.get("error") else None,
         })
 
     core_manager._hook = hooked_handler
+
 
 def cmd_apply(args):
     manager = core_manager.TweakManager()
     sys.exit(0 if manager.apply(Path(args.tweak)) else 1)
 
+
 def cmd_revert(args):
     manager = core_manager.TweakManager()
     sys.exit(0 if manager.revert(args.tweak_id) else 1)
+
 
 def cmd_list(args):
     manager = core_manager.TweakManager()
     manager.list_active()
     sys.exit(0)
 
-def cmd_verify(args):
+
+def cmd_verify(_args):
     invalid = run_verification()
+    sys.exit(0 if not invalid else 2)
 
-    if not invalid:
-        sys.exit(0)
 
-    sys.exit(2)
-    
-def cmd_recover(args):
-    rm = RecoveryManager()
-    result = rm.recover()
+def cmd_recover(_args):
+    manager = core_manager.TweakManager()
+    manager.recover()
+    sys.exit(0)
 
-    detected = result["detected"]
-    recovered = result["recovered"]
-    failed = result["failed"]
-
-    if detected == 0:
-        sys.exit(0)
-    if recovered == detected:
-        sys.exit(0)
-    if recovered > 0:
-        sys.exit(2)
-    sys.exit(3)
 
 def main():
     parser = argparse.ArgumentParser(add_help=False)
@@ -71,16 +63,16 @@ def main():
 
     parser2 = argparse.ArgumentParser()
     sub = parser2.add_subparsers(dest="command")
+
     sub.add_parser("recover")
     sub.add_parser("verify")
+    sub.add_parser("list")
 
     p_apply = sub.add_parser("apply")
     p_apply.add_argument("tweak")
 
     p_revert = sub.add_parser("revert")
     p_revert.add_argument("tweak_id")
-
-    sub.add_parser("list")
 
     args = parser2.parse_args(unknown)
 

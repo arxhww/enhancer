@@ -1,18 +1,15 @@
 import sqlite3
 import core.rollback as rollback
 from infra.recovery.detector import scan
-from core.tweak_manager import TweakManager
 
 
 class RecoveryManager:
-    def recover(self) -> dict:
+    def recover(self, manager) -> dict:
         zombies = scan()
 
         detected = len(zombies)
         recovered = 0
         failed = 0
-
-        tm = TweakManager()
 
         for h in zombies:
             hid = h["id"]
@@ -20,8 +17,7 @@ class RecoveryManager:
 
             try:
                 if status in ("applying", "verifying", "failed"):
-                    tm._execute_rollback_steps(hid)
-                    rollback.clear_snapshots(hid)
+                    manager._execute_rollback_steps(hid)
 
                     conn = sqlite3.connect(rollback.DB_PATH)
                     conn.execute(

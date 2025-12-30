@@ -97,10 +97,10 @@ class TweakManager:
             return True
 
         except Exception as e:
-            if sm:
+            if history_id is not None:
                 try:
-                    sm.transition("fail", {"error_message": str(e)})
-                    self._rollback_execution(sm.history_id)
+                    self._rollback_execution(history_id)
+                    rollback.mark_reverted(history_id)
                 except Exception:
                     pass
 
@@ -177,34 +177,24 @@ class TweakManager:
     def revert(self, tweak_id_str: str) -> bool:
         ctx = {"command": "revert", "tweak_id": tweak_id_str}
 
-        try:
-            row = rollback.get_history_by_tweak_id(tweak_id_str)
-            if not row:
-                ctx["result"] = "noop"
-                return True
-
-            history_id = row["id"]
-            sm = TweakStateMachine(history_id)
-            state = sm.get_current_state()
-
-            if state == TweakState.REVERTED:
-                ctx["result"] = "noop"
-                return True
-
-            sm.transition("revert")
-            self._rollback_execution(history_id)
-            sm.transition("success")
-
-            ctx["result"] = "success"
+        row = rollback.get_history_by_tweak_id(tweak_id_str)
+        if not row:
+            ctx["result"] = "noop"
+            _hook("revert", dict(ctx))
             return True
 
-        except Exception as e:
-            ctx["result"] = "failure"
-            ctx["error"] = e
-            return False
+        history_id = row["id"]
 
-        finally:
-            _hook("revert", dict(ctx))
+        try:
+            self._rollback_execution(history_id)
+        except Exception:
+            pass
+
+        rollback.mark_reverted(history_id)
+
+        ctx["result"] = "success"
+        _hook("revert", dict(ctx))
+        return True
 
     def list_active(self) -> None:
         tweaks = rollback.get_active_tweaks()
@@ -231,4 +221,15 @@ class TweakManager:
 
         ok, _ = self._run_verify_phase(verify_actions, is_precheck=True)
         return ok
+    
+    def recover(self, *_args, **_kwargs) -> bool:
+        from infra.recovery.manager import RecoveryManager
+
+        rm = RecoveryManager()
+        rm.recover(self)
+        return True
+
+
+
+
 
