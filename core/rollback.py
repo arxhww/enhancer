@@ -270,6 +270,23 @@ def get_by_id(history_id: int):
         "verified_at": row[5],
     }
 
+def get_verify_actions(history_id: int) -> list:
+    conn = sqlite3.connect(DB_PATH, timeout=10.0)
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT metadata_json
+        FROM snapshots_v2
+        WHERE history_id = ?
+          AND action_type = 'verify'
+        ORDER BY id ASC
+    """, (history_id,))
+
+    rows = cursor.fetchall()
+    conn.close()
+
+    return [json.loads(r[0]) for r in rows]
+
 
 
 init_db()
