@@ -29,6 +29,11 @@ def setup_telemetry(log_file=None):
 
 def cmd_apply(args):
     manager = core_manager.TweakManager()
+
+    if args.dry_run:
+        ok = manager.dry_run(Path(args.tweak))
+        sys.exit(0 if ok else 1)
+
     sys.exit(0 if manager.apply(Path(args.tweak)) else 1)
 
 
@@ -48,10 +53,20 @@ def cmd_verify(_args):
     sys.exit(0 if not invalid else 2)
 
 
-def cmd_recover(_args):
+def cmd_recover(args):
     manager = core_manager.TweakManager()
-    manager.recover()
-    sys.exit(0)
+    result = manager.recover()
+
+    detected = result["detected"]
+    recovered = result["recovered"]
+
+    if detected == 0:
+        sys.exit(0)
+    if recovered == detected:
+        sys.exit(0)
+    if recovered > 0:
+        sys.exit(2)
+    sys.exit(3)
 
 
 def main():
@@ -70,6 +85,7 @@ def main():
 
     p_apply = sub.add_parser("apply")
     p_apply.add_argument("tweak")
+    p_apply.add_argument("--dry-run", action="store_true")
 
     p_revert = sub.add_parser("revert")
     p_revert.add_argument("tweak_id")

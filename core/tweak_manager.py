@@ -14,6 +14,7 @@ from .validation import TweakValidator
 from .constants import SCHEMA_VERSION
 from .migrations import migrate_to_v2
 from infra.telemetry.writer import emit
+from .invariants import assert_no_applied_without_snapshots
 
 def _hook(event: str, ctx: dict) -> None:
     emit({
@@ -95,6 +96,7 @@ class TweakManager:
 
             ctx["result"] = "success"
             return True
+
 
         except Exception as e:
             if history_id is not None:
@@ -228,6 +230,23 @@ class TweakManager:
         rm = RecoveryManager()
         rm.recover(self)
         return True
+    
+    def dry_run(self, tweak_path: Path) -> bool:
+        tweak = self.load_tweak(tweak_path)
+        actions = tweak["actions"].get("apply", [])
+
+        class DryRunStep:
+            def __init__(self, action):
+                self.action = action
+
+            def execute(self):
+                self.action.snapshot()
+                return True
+
+        steps = [DryRunStep(create_action(a)) for a in actions]
+        Executor().run_steps(steps)
+        return True
+
 
 
 
