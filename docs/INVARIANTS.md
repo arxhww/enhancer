@@ -1,109 +1,224 @@
-```markdown
 # EnhancerCore – Engine Invariants
 
 ## 1. Purpose
 
-This document defines the **absolute guarantees** and **negative constraints** of the EnhancerCore engine.
+This document defines the **absolute guarantees**, **hard constraints**, and **forbidden behaviors**
+of the EnhancerCore execution engine.
 
-If a behavior is not explicitly listed as allowed, it is **forbidden by default**.
+Anything not explicitly allowed is **forbidden by default**.
 
-These invariants exist to eliminate undefined behavior, silent corruption, and semantic ambiguity.
+These invariants exist to:
+- Prevent undefined behavior
+- Eliminate silent corruption
+- Make failure modes explicit
+- Freeze the semantic contract of the engine
+
+This document is normative. Tests enforce it. Code must obey it.
 
 ---
 
-## 2. Data Persistence Invariants
+## 2. Persistence & History Invariants
 
-### 2.1 State Immutability
-- **History Entries**: Once a history entry reaches a terminal state (`applied`, `rolled_back`, `reverted`, `recovered`, `noop`), its `status` field **never changes**.
+### 2.1 History Entry Lifecycle
+
+- A history entry is created **before** any execution occurs.
+- Each entry has exactly one immutable `tweak_id`.
+- History entries are append-only except for:
+  - `status`
+  - `applied_at`
+  - `reverted_at`
+  - `verified_at`
+
+### 2.2 Terminal State Immutability
+
+Once a history entry reaches a terminal state, it **must never transition again**.
+
+Terminal states:
+- `applied`
+- `verified`
+- `reverted`
+- `recovered`
+- `noop`
+
+Rules:
 - Terminal states are write-once.
-- Any modification outside engine code is considered administrative repair and out of scope.
+- Any attempt to mutate a terminal entry is a logic error.
+- Administrative repair is explicitly out of scope.
 
-### 2.2 Snapshots
-- **Creation**: Snapshots are created **before** any `apply()` action is executed.
-- **Restoration**: Rollback restores **only** the data captured in the snapshot.
-- **No Inference**: The engine never infers or reconstructs prior state.
-- **Deletion**: Snapshots are deleted only through explicit retention or pruning policies.
+### 2.3 Snapshot Persistence
 
-### 2.3 Schema Versioning
-- **Authority**: `SCHEMA_VERSION` is the single source of truth.
-- **Validation**: Any tweak declaring a different `schema_version` is rejected before execution.
-- **Freeze Rule**: `SCHEMA_VERSION` is incremented only via explicit version release. No hot patches.
+- Snapshots are **never deleted automatically** by revert.
+- Revert restores state but preserves historical evidence.
+- Snapshots are retained for:
+  - Recovery
+  - Audit
+  - Deterministic re-execution
 
----
-
-## 3. Execution Flow Invariants
-
-### 3.1 Atomicity
-- **Batch Atomicity**: A batch executes as a single logical transaction.
-  - Any failure triggers rollback of all applied actions in the batch.
-  - Partial success is forbidden.
-- **Action Atomicity**: Each action must be atomic or fail clearly.
-  - Actions must not return partial success states.
-
-### 3.2 State Transitions
-- **Strict Graph**: All transitions must follow the `TweakState` transition graph.
-- **Single Authority**: Only `TweakStateMachine` may mutate `tweak_history.status`.
-- **No Implicit States**: No hidden or inferred states exist outside the enum.
-
-### 3.3 Error Handling
-- **Rollback Triggers**:
-  1. Exception during `apply()`
-  2. `verify()` returns `False`
-  3. Explicit recovery logic
-- **Centralized Control**: Rollback is initiated only by the top-level executor.
-- **Action Code Limitation**: Action implementations never trigger rollback directly.
+Deletion is allowed **only** via explicit retention or pruning policies.
 
 ---
 
-## 4. Composition Invariants
+## 3. Snapshot Invariants
 
-### 4.1 Batching Rules
-- **Tier Purity**: A batch contains tweaks of exactly one tier.
-- **Verify Semantics Purity**: A batch contains exactly one `verify_semantics` type.
-- **Reboot Purity**: Tweaks requiring reboot cannot batch with non-reboot tweaks.
-- **Boot Isolation**: Tweaks with `boot` scope cannot batch with non-boot tweaks.
+### 3.1 Creation Order
 
-### 4.2 Dependencies
-- **Pre-Apply Validation**: Dependencies are checked before execution.
-- **No Auto-Resolution**: The engine never applies or installs dependencies automatically.
-- **Circular Dependency Ban**: Circular dependencies invalidate the batch.
+- A snapshot is created **before** any `apply()` side effect.
+- If snapshot creation fails, execution must not proceed.
+- Snapshot creation is mandatory for all rollback-guaranteed tweaks.
 
-### 4.3 Conflicts
-- **Active Conflict Check**: Conflicts with active tweaks invalidate the batch.
-- **Intra-Batch Conflicts**: Conflicting tweaks cannot coexist in the same batch.
-- **Fail Fast**: Conflicts abort execution before any action runs.
+### 3.2 Restoration Rules
 
----
+- Rollback restores **only** data explicitly captured in the snapshot.
+- No inference, guessing, or reconstruction is permitted.
+- Rollback must be deterministic and idempotent.
 
-## 5. Validation Invariants
+### 3.3 Idempotency
 
-### 5.1 Order of Validation
-- **Composition First**: Batch-level rules are evaluated before individual tweak rules.
-- **Rationale**: Structural invalidity takes precedence over configuration errors.
-
-### 5.2 Schema Authority
-- **Specification**: `TWEAK_SCHEMA.md` defines the contract.
-- **Enforcement**: `TweakValidator` enforces it.
-- **Mismatch Rule**: Any divergence between schema and code is a bug in code.
+- Rolling back the same snapshot multiple times is safe.
+- Reverting an already reverted tweak is a no-op.
+- Revert never fails due to missing side effects.
 
 ---
 
-## 6. API Invariants
+## 4. Schema & Versioning Invariants
 
-### 6.1 Public Interfaces
-- **Return Types**: Public methods return only primitive or standard types.
-- **Exceptions**:
-  - `ValidationError` for contract violations
-  - `RuntimeError` for system failures
+### 4.1 Schema Authority
+
+- `SCHEMA_VERSION` is the single authoritative engine schema.
+- A tweak declaring a mismatched `schema_version` is rejected **before execution**.
+- Validation failure aborts the entire operation.
+
+### 4.2 Freeze Rule
+
+- `SCHEMA_VERSION` changes only via explicit version releases.
+- Hot patches that alter schema semantics are forbidden.
+- Migration logic must be explicit, reversible, and test-covered.
+
+---
+
+## 5. Execution Flow Invariants
+
+### 5.1 Batch Atomicity
+
+- A batch executes as a single logical transaction.
+- Any failure triggers rollback of **all** executed actions.
+- Partial success is forbidden.
+- No side effects may survive a failed batch.
+
+### 5.2 Action Atomicity
+
+- Each action must be:
+  - Fully successful, or
+  - Clearly failed
+- Partial application inside an action is forbidden.
+- Action code must not manage its own compensation logic.
+
+### 5.3 Centralized Rollback Control
+
+- Only the top-level engine may initiate rollback.
+- Actions must never trigger rollback directly.
+- Rollback order is strictly reverse-application order.
+
+---
+
+## 6. State Machine Invariants
+
+### 6.1 Single Authority
+
+- `TweakStateMachine` is the **only** component allowed to mutate `tweak_history.status`.
+- Direct database writes outside the state machine are forbidden.
+
+### 6.2 Strict Transition Graph
+
+- All state transitions must follow the declared transition graph.
+- Illegal transitions are logic errors and must raise immediately.
+- No implicit or derived states are allowed.
+
+---
+
+## 7. Crash & Recovery Invariants
+
+### 7.1 Crash Safety
+
+- A crash during apply must leave the system in:
+  - `reverted`, or
+  - a recoverable intermediate state
+- No zombie “applied” entries without snapshots may exist.
+
+### 7.2 Recovery Semantics
+
+- Recovery:
+  - Detects incomplete executions
+  - Replays rollback using persisted snapshots
+- Recovery is idempotent.
+- Recovery never applies new side effects.
+
+---
+
+## 8. Validation Invariants
+
+### 8.1 Validation Order
+
+1. Batch-level composition rules
+2. Schema validation
+3. Dependency validation
+4. Conflict validation
+
+Structural invalidity always aborts before execution.
+
+### 8.2 Schema Contract
+
+- `TWEAK_SCHEMA.md` defines the contract.
+- `TweakValidator` enforces it.
+- Any divergence between schema and code is a code bug.
+
+---
+
+## 9. Composition Invariants
+
+### 9.1 Batch Purity
+
+A batch must be homogeneous with respect to:
+- Tier
+- Verify semantics
+- Reboot requirement
+- Boot scope
+
+Violation aborts execution before any action runs.
+
+### 9.2 Dependency Rules
+
+- Dependencies are validated before execution.
+- Dependencies are **never auto-applied**.
+- Circular dependencies invalidate the batch.
+
+### 9.3 Conflict Rules
+
+- Conflicts with active tweaks invalidate execution.
+- Intra-batch conflicts are forbidden.
+- Conflict detection is fail-fast.
+
+---
+
+## 10. API Invariants
+
+### 10.1 Public Interfaces
+
+- Public methods return only primitive or standard types.
+- Exceptions exposed:
+  - `ValidationError` (contract violation)
+  - `RuntimeError` (engine failure)
 - Internal exceptions must not leak.
 
-### 6.2 Configuration Handling
-- **Immutability**: Loaded tweak definitions are treated as read-only.
-- **Isolation**: Validators operate on deep copies to prevent side effects.
+### 10.2 Configuration Handling
+
+- Loaded tweak definitions are immutable.
+- Validators operate on deep copies.
+- No runtime mutation of tweak definitions is allowed.
 
 ---
 
-## 7. Negative Constraints
+## 11. Negative Constraints
 
 The engine will **never**:
 
@@ -112,15 +227,16 @@ The engine will **never**:
 3. Suppress errors to report success.
 4. Write success states if verification fails.
 5. Guess previous system state during rollback.
-6. Apply tweaks implicitly without explicit invocation.
-7. Mutate history entries after reaching terminal state.
+6. Apply tweaks implicitly.
+7. Mutate terminal history entries.
 8. Execute Tier 3 tweaks in batches.
+9. Delete snapshots on revert.
+10. Recover by re-applying actions.
 
 ---
 
-## 8. Versioning
+## 12. Versioning
 
-- **v1.2.0**: Introduction of formal invariants, schema versioning, and state machine enforcement.
-- Any modification to this document requires an explicit version bump.
+- **v2.0.0**: Formal invariant freeze aligned with engine v2 architecture.
+- Any modification to this document requires a version bump.
 - Breaking invariant changes require a major version increment.
-```
