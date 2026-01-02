@@ -246,9 +246,20 @@ class TweakManager:
         steps = [DryRunStep(create_action(a)) for a in actions]
         Executor().run_steps(steps)
         return True
+    
+    def reexplain(self, tweak_path: Path) -> None:
+        tweak = self.load_tweak(tweak_path)
 
+        explanation = {
+            "id": tweak["id"],
+            "tier": tweak["tier"],
+            "risk_level": tweak["risk_level"],
+            "rollback_guaranteed": tweak["rollback_guaranteed"],
+            "requires_reboot": tweak["requires_reboot"],
+            "scope": tweak["scope"],
+            "verify_semantics": tweak["verify_semantics"],
+            "apply_actions": len(tweak["actions"].get("apply", [])),
+            "verify_actions": len(tweak["actions"].get("verify", [])),
+        }
 
-
-
-
-
+        print(json.dumps(explanation, indent=2))

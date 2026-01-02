@@ -67,6 +67,11 @@ def cmd_recover(args):
     if recovered > 0:
         sys.exit(2)
     sys.exit(3)
+    
+def cmd_reexplain(args):
+    manager = core_manager.TweakManager()
+    manager.reexplain(Path(args.tweak))
+    sys.exit(0)
 
 
 def main():
@@ -86,6 +91,10 @@ def main():
     p_apply = sub.add_parser("apply")
     p_apply.add_argument("tweak")
     p_apply.add_argument("--dry-run", action="store_true")
+    
+    p_reexplain = sub.add_parser("reexplain")
+    p_reexplain.add_argument("tweak")
+
 
     p_revert = sub.add_parser("revert")
     p_revert.add_argument("tweak_id")
@@ -102,6 +111,8 @@ def main():
         cmd_recover(args)
     elif args.command == "verify":
         cmd_verify(args)
+    elif args.command == "reexplain":
+        cmd_reexplain(args)
     else:
         parser2.print_help()
         sys.exit(1)
